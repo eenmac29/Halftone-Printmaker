@@ -203,10 +203,10 @@
         .color-item {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 12px;
             background: #0a0a0a;
             border: 1px solid #111;
-            padding: 6px;
+            padding: 8px;
             margin-bottom: 4px;
             cursor: grab;
         }
@@ -214,12 +214,14 @@
         .color-item input[type="color"] {
             border: none;
             background: transparent;
-            width: 20px;
-            height: 20px;
+            width: 24px;
+            height: 24px;
             cursor: pointer;
         }
-        .color-item input[type="range"] {
+        .color-label-text {
+            color: #aaa;
             flex: 1;
+            text-transform: uppercase;
         }
         .color-del-btn {
             background: transparent;
@@ -332,12 +334,16 @@
 
             <div class="section">
                 <div class="section-title">05 <span>/ INK & PALETTE SYSTEMS</span></div>
-                <div class="control-group" style="margin-bottom:15px;">
+                <div class="control-group" style="margin-bottom:12px;">
                     <div class="control-label">Paper Base Stock Color</div>
                     <div style="display:flex; gap:8px; align-items:center;">
                         <input type="color" id="p-paper-color" value="#ffffff" style="border:none; background:none; width:30px; height:30px; cursor:pointer;">
                         <span style="color:#aaa; text-transform:uppercase;">Background Buffer</span>
                     </div>
+                </div>
+                <div class="control-group" style="margin-bottom:18px;">
+                    <div class="control-label">Tactile Paper Grain <span class="val" id="v-grain">20%</span></div>
+                    <input type="range" id="p-grain" min="0" max="100" step="1" value="20">
                 </div>
                 <div class="control-group" style="margin-bottom: 5px;">
                     <div class="control-label">Printed Ink Layers (Gradient Map)</div>
@@ -352,7 +358,7 @@
                     <button id="exp-low">Render 1000px</button>
                     <button id="exp-high">Render 3000px</button>
                 </div>
-                <button id="exp-video" style="background:#0a0a0a; text-align:center;">Record WebM Stream (Start/Stop)</button>
+                <button id="exp-video" style="background:#0a0a0a; text-align:center;">Record MP4 Stream (Start/Stop)</button>
                 <div id="recording-status">● RECORDING BUFFER ACTIVE</div>
             </div>
 
@@ -399,9 +405,10 @@
             uniform float u_wave_freq;
 
             uniform vec3 u_paper_color_raw;
+            uniform float u_grain_strength;
             uniform int u_num_colors;
-            uniform vec3 u_colors[10];     // Upgraded buffer capacity to 10
-            uniform float u_weights[10];   // Upgraded buffer capacity to 10
+            uniform vec3 u_colors[10];     
+            uniform float u_weights[10];   
 
             float noise(vec2 st) {
                 return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
@@ -463,7 +470,6 @@
                 for(int i = 0; i < u_num_colors; i++) { totalW += u_weights[i]; }
 
                 float accumulated = 0.0;
-                // Expanded compilation loop boundaries up to 9 transitions (10 colors max)
                 for(int i = 0; i < 9; i++) {
                     if (i >= u_num_colors - 1) break;
                     float w1 = u_weights[i] / totalW;
@@ -478,7 +484,13 @@
                     inkGradientColor = u_colors[i+1];
                 }
 
-                vec3 outputFrame = mix(u_paper_color_raw, inkGradientColor, maskFactor);
+                float pNoise = noise(uv * u_resolution * 1.0);
+                float pNoiseFine = noise(uv * u_resolution * 3.5);
+                float paperTooth = (pNoise * 0.65 + pNoiseFine * 0.35);
+                
+                vec3 texturedPaper = u_paper_color_raw - (vec3(paperTooth) * u_grain_strength * 0.12);
+
+                vec3 outputFrame = mix(texturedPaper, inkGradientColor, maskFactor);
                 fragColor = vec4(outputFrame, 1.0);
             }
         `;
@@ -496,11 +508,11 @@
             gamma: 1.0, contrast: 1.0, invert: false,
             patternType: 0, gridDensity: 45, patternAngle: 45, dotSharpness: 0.05,
             playing: true, speed: 15, waveAmp: 0.0, waveFreq: 10.0,
-            paperColor: '#ffffff',
+            paperColor: '#ffffff', grainStrength: 0.20,
             colors: [
-                { hex: '#000000', weight: 1.0 },
-                { hex: '#330022', weight: 1.0 },
-                { hex: '#ffffff', weight: 1.0 }
+                { hex: '#000000' },
+                { hex: '#330022' },
+                { hex: '#ffffff' }
             ],
             aspect: '1:1', uiScale: 100,
             time: 0, lastFrameTime: 0
@@ -627,6 +639,7 @@
 
             const paperRgb = hexToRgb(state.paperColor);
             gl.uniform3f(gl.getUniformLocation(program, "u_paper_color_raw"), paperRgb.r, paperRgb.g, paperRgb.b);
+            gl.uniform1f(gl.getUniformLocation(program, "u_grain_strength"), state.grainStrength);
 
             gl.uniform1i(gl.getUniformLocation(program, "u_num_colors"), state.colors.length);
             gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), canvas.width, canvas.height);
@@ -637,7 +650,7 @@
             state.colors.forEach(c => {
                 const rgb = hexToRgb(c.hex);
                 colorsFlat.push(rgb.r, rgb.g, rgb.b);
-                weightsFlat.push(c.weight);
+                weightsFlat.push(1.0); // Balanced weight configurations processed evenly internally
             });
 
             gl.uniform3fv(gl.getUniformLocation(program, "u_colors"), new Float32Array(colorsFlat));
@@ -676,7 +689,7 @@
             } : { r: 0, g: 0, b: 0 };
         }
 
-        // --- Upgraded Dynamic Color Management Engine ---
+        // --- Simplified Color Management UI Panel Engine ---
         function generateColorListUI() {
             const container = document.getElementById('color-list');
             container.innerHTML = '';
@@ -687,21 +700,18 @@
                 row.draggable = true;
                 row.dataset.index = idx;
 
-                // Only inject delete button vectors if baseline size rule allows (length > 2)
-                const showDelete = state.colors.length > 2;
+                // Delete configuration checks for 1 baseline layer choice boundary
+                const showDelete = state.colors.length > 1;
 
                 row.innerHTML = `
                     <span style="width:12px; color:#555;">☰</span>
                     <input type="color" value="${col.hex}">
-                    <input type="range" min="0.1" max="5.0" step="0.1" value="${col.weight}">
+                    <div class="color-label-text">Ink Layer #${idx + 1}</div>
                     ${showDelete ? `<button class="color-del-btn" data-del-idx="${idx}">✕</button>` : ''}
                 `;
 
                 row.querySelector('input[type="color"]').addEventListener('input', (e) => {
                     state.colors[idx].hex = e.target.value;
-                });
-                row.querySelector('input[type="range"]').addEventListener('input', (e) => {
-                    state.colors[idx].weight = parseFloat(e.target.value);
                 });
 
                 if(showDelete) {
@@ -732,7 +742,6 @@
                 container.appendChild(row);
             });
 
-            // Handle add ink capability thresholds
             const addBtn = document.getElementById('add-color-btn');
             if(state.colors.length >= 10) {
                 addBtn.style.display = 'none';
@@ -834,6 +843,13 @@
                 });
             });
 
+            const grainInput = document.getElementById('p-grain');
+            const grainLabel = document.getElementById('v-grain');
+            grainInput.addEventListener('input', (e) => {
+                state.grainStrength = parseFloat(e.target.value) / 100.0;
+                grainLabel.innerText = `${e.target.value}%`;
+            });
+
             document.getElementById('p-pattern-type').addEventListener('change', (e) => {
                 state.patternType = parseInt(e.target.value);
             });
@@ -865,10 +881,9 @@
                 resizeCanvas();
             });
 
-            // Dynamic creation hook bindings
             document.getElementById('add-color-btn').addEventListener('click', () => {
                 if(state.colors.length < 10) {
-                    state.colors.push({ hex: '#888888', weight: 1.0 });
+                    state.colors.push({ hex: '#888888' });
                     generateColorListUI();
                 }
             });
@@ -908,6 +923,7 @@
             resizeCanvas();
         }
 
+        // --- Upgraded MP4 Media Stream Encoder Engine ---
         function toggleVideoRecording() {
             const btn = document.getElementById('exp-video');
             const statusIndicator = document.getElementById('recording-status');
@@ -915,28 +931,36 @@
             if (isRecording) {
                 mediaRecorder.stop();
                 isRecording = false;
-                btn.innerText = "Record WebM Stream (Start/Stop)";
+                btn.innerText = "Record MP4 Stream (Start/Stop)";
                 btn.style.background = "#0a0a0a";
                 statusIndicator.style.display = "none";
             } else {
                 recordedChunks = [];
                 const stream = canvas.captureStream(30); 
                 
-                let options = { mimeType: 'video/webm;codecs=vp9' };
-                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                    options = { mimeType: 'video/webm;codecs=vp8' };
+                // Prioritize native MP4 container pipelines 
+                let mimeType = 'video/mp4;codecs=h264';
+                if (!MediaRecorder.isTypeSupported(mimeType)) {
+                    mimeType = 'video/mp4;codecs=avc1';
+                }
+                if (!MediaRecorder.isTypeSupported(mimeType)) {
+                    mimeType = 'video/mp4';
+                }
+                // Adaptive container fallback profile wrap
+                if (!MediaRecorder.isTypeSupported(mimeType)) {
+                    mimeType = 'video/webm;codecs=vp9';
                 }
 
-                mediaRecorder = new MediaRecorder(stream, options);
+                mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType });
                 mediaRecorder.ondataavailable = (e) => {
                     if (e.data.size > 0) recordedChunks.push(e.data);
                 };
 
                 mediaRecorder.onstop = () => {
-                    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                    const blob = new Blob(recordedChunks, { type: mimeType.includes('mp4') ? 'video/mp4' : 'video/webm' });
                     const url = URL.createObjectURL(blob);
                     const link = document.createElement('a');
-                    link.download = `halftone_capture.webm`;
+                    link.download = `halftone_capture.mp4`; // Always download packaged under standard MP4 flags
                     link.href = url;
                     link.click();
                 };
