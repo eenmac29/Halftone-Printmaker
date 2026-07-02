@@ -221,6 +221,19 @@
         .color-item input[type="range"] {
             flex: 1;
         }
+        .color-del-btn {
+            background: transparent;
+            border: none;
+            color: #555;
+            width: auto;
+            padding: 0 5px;
+            font-size: 10px;
+            font-weight: bold;
+        }
+        .color-del-btn:hover {
+            background: transparent;
+            color: #ff4444;
+        }
 
         #recording-status {
             color: #ff3333;
@@ -330,6 +343,7 @@
                     <div class="control-label">Printed Ink Layers (Gradient Map)</div>
                 </div>
                 <div id="color-list"></div>
+                <button id="add-color-btn" style="margin-top:8px; background:#0d0d0d; text-align:center; font-weight:bold; border-color:#222;">+ Add Ink Layer</button>
             </div>
 
             <div class="section">
@@ -372,27 +386,22 @@
             uniform vec2 u_resolution;
             uniform float u_time;
             
-            // Core Contrast Matrices
             uniform float u_gamma;
             uniform float u_contrast;
             uniform bool u_invert;
 
-            // Halftone Printing Parameters
             uniform int u_pattern_type;
             uniform float u_density;
             uniform float u_screen_angle;
             uniform float u_sharpness;
 
-            // Fluid Modulations
             uniform float u_wave_amp;
             uniform float u_wave_freq;
 
-            // Color Vector Systems
-            vec3 u_paper_color;
             uniform vec3 u_paper_color_raw;
             uniform int u_num_colors;
-            uniform vec3 u_colors[5];
-            uniform float u_weights[5];
+            uniform vec3 u_colors[10];     // Upgraded buffer capacity to 10
+            uniform float u_weights[10];   // Upgraded buffer capacity to 10
 
             float noise(vec2 st) {
                 return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
@@ -403,7 +412,6 @@
                 vec4 tex = texture(u_texture, uv);
                 vec3 srcColor = tex.rgb;
 
-                // Process Luminance & Exposure Pipelinings
                 srcColor = pow(max(srcColor, vec3(0.0)), vec3(u_gamma));
                 float lum = dot(srcColor, vec3(0.299, 0.587, 0.114));
                 lum = clamp(pow(lum, u_contrast), 0.0, 1.0);
@@ -412,36 +420,32 @@
                     lum = 1.0 - lum;
                 }
 
-                // Mathematical Coordinate Rotations for Screen Setup
                 float rad = radians(u_screen_angle);
                 mat2 rot = mat2(cos(rad), -sin(rad), sin(rad), cos(rad));
                 vec2 rotUv = rot * (uv - 0.5);
 
-                // Inject Fluid Motion Displacements
                 if (u_wave_amp > 0.0) {
                     rotUv.y += sin(rotUv.x * u_wave_freq + u_time) * u_wave_amp;
                     rotUv.x += cos(rotUv.y * u_wave_freq + u_time) * (u_wave_amp * 0.5);
                 }
 
-                // Tile Space Boundaries 
                 vec2 st = rotUv * u_density;
                 vec2 fpos = fract(st) - 0.5;
 
-                // Evaluate Screen Primitives 
                 float maskFactor = 0.0;
                 float edgeSize = u_sharpness;
 
-                if (u_pattern_type == 0) { // Concentric Dots
+                if (u_pattern_type == 0) { 
                     float dist = length(fpos);
                     float targetRadius = (1.0 - lum) * 0.707;
                     maskFactor = smoothstep(targetRadius + edgeSize, targetRadius - edgeSize, dist);
                 } 
-                else if (u_pattern_type == 1) { // Line Screen
+                else if (u_pattern_type == 1) { 
                     float dist = abs(fpos.y);
                     float targetThickness = (1.0 - lum) * 0.5;
                     maskFactor = smoothstep(targetThickness + edgeSize, targetThickness - edgeSize, dist);
                 } 
-                else if (u_pattern_type == 2) { // Crosshatch Engraving
+                else if (u_pattern_type == 2) { 
                     float distY = abs(fpos.y);
                     float distX = abs(fpos.x);
                     float targetThickness = (1.0 - lum) * 0.5;
@@ -449,18 +453,18 @@
                     float lineX = smoothstep(targetThickness + edgeSize, targetThickness - edgeSize, distX);
                     maskFactor = max(lineY, lineX);
                 } 
-                else if (u_pattern_type == 3) { // Stochastic Dither
+                else if (u_pattern_type == 3) { 
                     float grainValue = noise(uv * u_resolution + vec2(sin(u_time), cos(u_time)));
                     maskFactor = (1.0 - lum) > grainValue ? 1.0 : 0.0;
                 }
 
-                // Build Dynamic Multi-Ink Gradient Array Pipeline
                 vec3 inkGradientColor = u_colors[0];
                 float totalW = 0.0;
                 for(int i = 0; i < u_num_colors; i++) { totalW += u_weights[i]; }
 
                 float accumulated = 0.0;
-                for(int i = 0; i < 4; i++) {
+                // Expanded compilation loop boundaries up to 9 transitions (10 colors max)
+                for(int i = 0; i < 9; i++) {
                     if (i >= u_num_colors - 1) break;
                     float w1 = u_weights[i] / totalW;
                     float nextLimit = accumulated + w1;
@@ -474,7 +478,6 @@
                     inkGradientColor = u_colors[i+1];
                 }
 
-                // Final Stamp Mix: Paper Stock Base vs Dynamic Ink Mix
                 vec3 outputFrame = mix(u_paper_color_raw, inkGradientColor, maskFactor);
                 fragColor = vec4(outputFrame, 1.0);
             }
@@ -496,10 +499,8 @@
             paperColor: '#ffffff',
             colors: [
                 { hex: '#000000', weight: 1.0 },
-                { hex: '#111122', weight: 1.0 },
                 { hex: '#330022', weight: 1.0 },
-                { hex: '#550011', weight: 1.0 },
-                { hex: '#110000', weight: 1.0 }
+                { hex: '#ffffff', weight: 1.0 }
             ],
             aspect: '1:1', uiScale: 100,
             time: 0, lastFrameTime: 0
@@ -624,7 +625,6 @@
             gl.uniform1f(gl.getUniformLocation(program, "u_wave_amp"), state.waveAmp);
             gl.uniform1f(gl.getUniformLocation(program, "u_wave_freq"), state.waveFreq);
 
-            // Pass Paper Background Vector
             const paperRgb = hexToRgb(state.paperColor);
             gl.uniform3f(gl.getUniformLocation(program, "u_paper_color_raw"), paperRgb.r, paperRgb.g, paperRgb.b);
 
@@ -676,19 +676,25 @@
             } : { r: 0, g: 0, b: 0 };
         }
 
+        // --- Upgraded Dynamic Color Management Engine ---
         function generateColorListUI() {
             const container = document.getElementById('color-list');
             container.innerHTML = '';
+            
             state.colors.forEach((col, idx) => {
                 const row = document.createElement('div');
                 row.className = 'color-item';
                 row.draggable = true;
                 row.dataset.index = idx;
 
+                // Only inject delete button vectors if baseline size rule allows (length > 2)
+                const showDelete = state.colors.length > 2;
+
                 row.innerHTML = `
                     <span style="width:12px; color:#555;">☰</span>
                     <input type="color" value="${col.hex}">
                     <input type="range" min="0.1" max="5.0" step="0.1" value="${col.weight}">
+                    ${showDelete ? `<button class="color-del-btn" data-del-idx="${idx}">✕</button>` : ''}
                 `;
 
                 row.querySelector('input[type="color"]').addEventListener('input', (e) => {
@@ -697,6 +703,14 @@
                 row.querySelector('input[type="range"]').addEventListener('input', (e) => {
                     state.colors[idx].weight = parseFloat(e.target.value);
                 });
+
+                if(showDelete) {
+                    row.querySelector('.color-del-btn').addEventListener('click', (e) => {
+                        const targetIndex = parseInt(e.target.getAttribute('data-del-idx'));
+                        state.colors.splice(targetIndex, 1);
+                        generateColorListUI();
+                    });
+                }
 
                 row.addEventListener('dragstart', (e) => {
                     e.dataTransfer.setData('text/plain', idx);
@@ -717,6 +731,14 @@
 
                 container.appendChild(row);
             });
+
+            // Handle add ink capability thresholds
+            const addBtn = document.getElementById('add-color-btn');
+            if(state.colors.length >= 10) {
+                addBtn.style.display = 'none';
+            } else {
+                addBtn.style.display = 'block';
+            }
         }
 
         function processFile(file) {
@@ -792,7 +814,6 @@
                 }
             });
 
-            // Bind State Controllers
             const bindings = [
                 { id: 'p-gamma', var: 'gamma', label: 'v-gamma' },
                 { id: 'p-shadows', var: 'contrast', label: 'v-shadows' },
@@ -842,6 +863,14 @@
                 state.uiScale = parseInt(e.target.value);
                 document.getElementById('v-scale').innerText = `${state.uiScale}%`;
                 resizeCanvas();
+            });
+
+            // Dynamic creation hook bindings
+            document.getElementById('add-color-btn').addEventListener('click', () => {
+                if(state.colors.length < 10) {
+                    state.colors.push({ hex: '#888888', weight: 1.0 });
+                    generateColorListUI();
+                }
             });
 
             document.getElementById('exp-low').addEventListener('click', () => captureFrame(1000));
