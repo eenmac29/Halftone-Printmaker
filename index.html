@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kinetic Halftone Printmaker Studio</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 11px;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+        }
+
+        /* --- UI Layout & Stronger Hierarchy --- */
+        #sidebar {
+            width: 340px;
+            height: 100%;
+            border-right: 1px solid #222;
+            display: flex;
+            flex-direction: column;
+            background: #000;
+            z-index: 10;
+        }
+
+        #viewport-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #050505;
+            position: relative;
+            padding: 20px;
+        }
+
+        .scroll-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 15px;
+        }
+
+        .scroll-area::-webkit-scrollbar {
+            width: 4px;
+        }
+        .scroll-area::-webkit-scrollbar-thumb {
+            background: #333;
+        }
+
+        h1 {
+            font-size: 15px;
+            font-weight: bold;
+            letter-spacing: 3px;
+            padding: 25px 15px;
+            border-bottom: 1px solid #222;
+            text-transform: uppercase;
+            color: #fff;
+        }
+
+        /* --- Structural Hierarchy Sections --- */
+        .section {
+            margin-bottom: 35px;
+        }
+
+        .section-title {
+            font-size: 11px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 15px;
+            color: #fff;
+            border-bottom: 1px solid #fff;
+            padding-bottom: 6px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .section-title span {
+            color: #666;
+        }
+
+        .control-group {
+            margin-bottom: 12px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .control-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            color: #888;
+        }
+
+        .control-label span.val {
+            color: #fff;
+            font-weight: bold;
+        }
+
+        /* --- Inputs & Buttons --- */
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: #1a1a1a;
+            height: 2px;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 10px;
+            height: 10px;
+            background: #fff;
+            cursor: pointer;
+            border-radius: 0;
+            transition: transform 0.1s;
+        }
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        select, button {
+            background: #000;
+            border: 1px solid #222;
+            color: #fff;
+            padding: 8px 10px;
+            font-family: inherit;
+            font-size: 11px;
+            cursor: pointer;
+            outline: none;
+            text-transform: uppercase;
+            width: 100%;
+            text-align: left;
+            transition: all 0.15s ease;
+        }
+
+        select:hover, button:hover {
+            background: #fff;
+            color: #000;
+            border-color: #fff;
+        }
+
+        .btn-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 5px;
+        }
+
+        .toggle-btn {
+            text-align: center;
+        }
+        .toggle-btn.active {
+            background: #fff;
+            color: #000;
+            border-color: #fff;
+        }
+
+        /* --- Drag & Drop Zone --- */
+        #drop-zone {
+            border: 1px dashed #222;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            margin-bottom: 15px;
+            color: #666;
+            transition: all 0.2s;
+        }
+
+        #drop-zone:hover, #drop-zone.dragover {
+            border-color: #fff;
+            color: #fff;
+        }
+
+        /* --- Canvas Container --- */
+        #canvas-wrapper {
+            position: relative;
+            box-shadow: 0 0 40px rgba(0,0,0,0.9);
+            background: #000;
+            max-width: 100%;
+            max-height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: contain;
+        }
+
+        /* --- Color Layers Sorting --- */
+        .color-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #0a0a0a;
+            border: 1px solid #111;
+            padding: 6px;
+            margin-bottom: 4px;
+            cursor: grab;
+        }
+        .color-item:active { cursor: grabbing; }
+        .color-item input[type="color"] {
+            border: none;
+            background: transparent;
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        .color-item input[type="range"] {
+            flex: 1;
+        }
+
+        #recording-status {
+            color: #ff3333;
+            font-weight: bold;
+            animation: blink 1s infinite;
+            display: none;
+            margin-top: 8px;
+            text-align: center;
+            letter-spacing: 1px;
+        }
+
+        @keyframes blink { 50% { opacity: 0; } }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <h1>Halftone Studio</h1>
+        <div class="scroll-area">
+            
+            <div class="section">
+                <div class="section-title">01 <span>/ SOURCE INPUT</span></div>
+                <div id="drop-zone">DRAG & DROP IMAGE/VIDEO OR CLICK</div>
+                <input type="file" id="file-input" accept="image/*,video/*" style="display:none;">
+                <button id="webcam-btn" class="toggle-btn" style="margin-bottom:12px;">Toggle Webcam</button>
+                
+                <div class="control-group">
+                    <div class="control-label">Gamma / Exposure <span class="val" id="v-gamma">1.0</span></div>
+                    <input type="range" id="p-gamma" min="0.2" max="3.0" step="0.05" value="1.0">
+                </div>
+                <div class="control-group">
+                    <div class="control-label">Contrast Adjust <span class="val" id="v-shadows">1.0</span></div>
+                    <input type="range" id="p-shadows" min="0.2" max="3.0" step="0.05" value="1.0">
+                </div>
+                <button id="p-invert" class="toggle-btn">Invert Source Map: OFF</button>
+            </div>
+
+            <div class="section">
+                <div class="section-title">02 <span>/ CANVAS GEOMETRY</span></div>
+                <div class="control-group" style="margin-bottom:8px;">
+                    <select id="p-aspect">
+                        <option value="16:9">Horizontal 16:9</option>
+                        <option value="3:2">Horizontal 3:2</option>
+                        <option value="1:1" selected>Square 1:1</option>
+                        <option value="9:16">Vertical 9:16</option>
+                        <option value="2:3">Vertical 2x3</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <div class="control-label">UI Preview Scale <span class="val" id="v-scale">100%</span></div>
+                    <input type="range" id="p-scale" min="20" max="100" step="1" value="100">
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">03 <span>/ SCREENPRINT MATRIX</span></div>
+                <div class="control-group" style="margin-bottom:12px;">
+                    <div class="control-label">Print Screen Geometry</div>
+                    <select id="p-pattern-type">
+                        <option value="0" selected>Concentric Halftone Dots</option>
+                        <option value="1">Horizontal Line Screen</option>
+                        <option value="2">Crosshatch Graphic Engraving</option>
+                        <option value="3">Stochastic Grain Dither</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <div class="control-label">Screen Matrix Scale <span class="val" id="v-density">45</span></div>
+                    <input type="range" id="p-density" min="10" max="250" step="1" value="45">
+                </div>
+                <div class="control-group">
+                    <div class="control-label">Screen Rotation Angle <span class="val" id="v-screen-angle">45°</span></div>
+                    <input type="range" id="p-screen-angle" min="-180" max="180" step="1" value="45">
+                </div>
+                <div class="control-group">
+                    <div class="control-label">Dot Ink Edge Sharpness <span class="val" id="v-sharpness">0.05</span></div>
+                    <input type="range" id="p-sharpness" min="0.001" max="0.5" step="0.005" value="0.05">
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">04 <span>/ KINETIC MODULATORS</span></div>
+                <button id="anim-toggle" class="toggle-btn active" style="margin-bottom:12px;">Engine: PLAYING</button>
+                <div class="control-group">
+                    <div class="control-label">Modulation Speed <span class="val" id="v-speed">15</span></div>
+                    <input type="range" id="p-speed" min="0" max="100" step="1" value="15">
+                </div>
+                <div class="control-group">
+                    <div class="control-label">Fluid Wave Displacement <span class="val" id="v-wave-amp">0.0</span></div>
+                    <input type="range" id="p-wave-amp" min="0.0" max="0.3" step="0.005" value="0.0">
+                </div>
+                <div class="control-group">
+                    <div class="control-label">Fluid Wave Frequency <span class="val" id="v-wave-freq">10.0</span></div>
+                    <input type="range" id="p-wave-freq" min="1.0" max="40.0" step="0.5" value="10.0">
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">05 <span>/ INK & PALETTE SYSTEMS</span></div>
+                <div class="control-group" style="margin-bottom:15px;">
+                    <div class="control-label">Paper Base Stock Color</div>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <input type="color" id="p-paper-color" value="#ffffff" style="border:none; background:none; width:30px; height:30px; cursor:pointer;">
+                        <span style="color:#aaa; text-transform:uppercase;">Background Buffer</span>
+                    </div>
+                </div>
+                <div class="control-group" style="margin-bottom: 5px;">
+                    <div class="control-label">Printed Ink Layers (Gradient Map)</div>
+                </div>
+                <div id="color-list"></div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">06 <span>/ PRODUCTION EXPORTS</span></div>
+                <div class="btn-group" style="margin-bottom:5px;">
+                    <button id="exp-low">Render 1000px</button>
+                    <button id="exp-high">Render 3000px</button>
+                </div>
+                <button id="exp-video" style="background:#0a0a0a; text-align:center;">Record WebM Stream (Start/Stop)</button>
+                <div id="recording-status">● RECORDING BUFFER ACTIVE</div>
+            </div>
+
+        </div>
+    </div>
+
+    <div id="viewport-container">
+        <div id="canvas-wrapper">
+            <canvas id="glCanvas"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // --- Shaders ---
+        const vsSource = `#version 300 es
+            in vec2 position;
+            out vec2 vUv;
+            void main() {
+                vUv = position * 0.5 + 0.5;
+                vUv.y = 1.0 - vUv.y; 
+                gl_Position = vec4(position, 0.0, 1.0);
+            }
+        `;
+
+        const fsSource = `#version 300 es
+            precision highp float;
+            in vec2 vUv;
+            out vec4 fragColor;
+
+            uniform sampler2D u_texture;
+            uniform vec2 u_resolution;
+            uniform float u_time;
+            
+            // Core Contrast Matrices
+            uniform float u_gamma;
+            uniform float u_contrast;
+            uniform bool u_invert;
+
+            // Halftone Printing Parameters
+            uniform int u_pattern_type;
+            uniform float u_density;
+            uniform float u_screen_angle;
+            uniform float u_sharpness;
+
+            // Fluid Modulations
+            uniform float u_wave_amp;
+            uniform float u_wave_freq;
+
+            // Color Vector Systems
+            vec3 u_paper_color;
+            uniform vec3 u_paper_color_raw;
+            uniform int u_num_colors;
+            uniform vec3 u_colors[5];
+            uniform float u_weights[5];
+
+            float noise(vec2 st) {
+                return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
+            }
+
+            void main() {
+                vec2 uv = vUv;
+                vec4 tex = texture(u_texture, uv);
+                vec3 srcColor = tex.rgb;
+
+                // Process Luminance & Exposure Pipelinings
+                srcColor = pow(max(srcColor, vec3(0.0)), vec3(u_gamma));
+                float lum = dot(srcColor, vec3(0.299, 0.587, 0.114));
+                lum = clamp(pow(lum, u_contrast), 0.0, 1.0);
+
+                if(u_invert) {
+                    lum = 1.0 - lum;
+                }
+
+                // Mathematical Coordinate Rotations for Screen Setup
+                float rad = radians(u_screen_angle);
+                mat2 rot = mat2(cos(rad), -sin(rad), sin(rad), cos(rad));
+                vec2 rotUv = rot * (uv - 0.5);
+
+                // Inject Fluid Motion Displacements
+                if (u_wave_amp > 0.0) {
+                    rotUv.y += sin(rotUv.x * u_wave_freq + u_time) * u_wave_amp;
+                    rotUv.x += cos(rotUv.y * u_wave_freq + u_time) * (u_wave_amp * 0.5);
+                }
+
+                // Tile Space Boundaries 
+                vec2 st = rotUv * u_density;
+                vec2 fpos = fract(st) - 0.5;
+
+                // Evaluate Screen Primitives 
+                float maskFactor = 0.0;
+                float edgeSize = u_sharpness;
+
+                if (u_pattern_type == 0) { // Concentric Dots
+                    float dist = length(fpos);
+                    float targetRadius = (1.0 - lum) * 0.707;
+                    maskFactor = smoothstep(targetRadius + edgeSize, targetRadius - edgeSize, dist);
+                } 
+                else if (u_pattern_type == 1) { // Line Screen
+                    float dist = abs(fpos.y);
+                    float targetThickness = (1.0 - lum) * 0.5;
+                    maskFactor = smoothstep(targetThickness + edgeSize, targetThickness - edgeSize, dist);
+                } 
+                else if (u_pattern_type == 2) { // Crosshatch Engraving
+                    float distY = abs(fpos.y);
+                    float distX = abs(fpos.x);
+                    float targetThickness = (1.0 - lum) * 0.5;
+                    float lineY = smoothstep(targetThickness + edgeSize, targetThickness - edgeSize, distY);
+                    float lineX = smoothstep(targetThickness + edgeSize, targetThickness - edgeSize, distX);
+                    maskFactor = max(lineY, lineX);
+                } 
+                else if (u_pattern_type == 3) { // Stochastic Dither
+                    float grainValue = noise(uv * u_resolution + vec2(sin(u_time), cos(u_time)));
+                    maskFactor = (1.0 - lum) > grainValue ? 1.0 : 0.0;
+                }
+
+                // Build Dynamic Multi-Ink Gradient Array Pipeline
+                vec3 inkGradientColor = u_colors[0];
+                float totalW = 0.0;
+                for(int i = 0; i < u_num_colors; i++) { totalW += u_weights[i]; }
+
+                float accumulated = 0.0;
+                for(int i = 0; i < 4; i++) {
+                    if (i >= u_num_colors - 1) break;
+                    float w1 = u_weights[i] / totalW;
+                    float nextLimit = accumulated + w1;
+                    
+                    if(uv.x >= accumulated && uv.x <= nextLimit) {
+                        float t = (uv.x - accumulated) / w1;
+                        inkGradientColor = mix(u_colors[i], u_colors[i+1], t);
+                        break;
+                    }
+                    accumulated = nextLimit;
+                    inkGradientColor = u_colors[i+1];
+                }
+
+                // Final Stamp Mix: Paper Stock Base vs Dynamic Ink Mix
+                vec3 outputFrame = mix(u_paper_color_raw, inkGradientColor, maskFactor);
+                fragColor = vec4(outputFrame, 1.0);
+            }
+        `;
+
+        // --- App Architecture ---
+        let gl, program;
+        let positionBuffer, vao;
+        let textureID = null;
+        let sourceElement = null; 
+        let isVideo = false;
+        let isWebcam = false;
+        let webcamStream = null;
+
+        const state = {
+            gamma: 1.0, contrast: 1.0, invert: false,
+            patternType: 0, gridDensity: 45, patternAngle: 45, dotSharpness: 0.05,
+            playing: true, speed: 15, waveAmp: 0.0, waveFreq: 10.0,
+            paperColor: '#ffffff',
+            colors: [
+                { hex: '#000000', weight: 1.0 },
+                { hex: '#111122', weight: 1.0 },
+                { hex: '#330022', weight: 1.0 },
+                { hex: '#550011', weight: 1.0 },
+                { hex: '#110000', weight: 1.0 }
+            ],
+            aspect: '1:1', uiScale: 100,
+            time: 0, lastFrameTime: 0
+        };
+
+        const canvas = document.getElementById('glCanvas');
+        const wrapper = document.getElementById('canvas-wrapper');
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        let isRecording = false;
+
+        function initContext() {
+            gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true });
+            if (!gl) { alert('WebGL 2 required'); return; }
+
+            const vs = compileShader(gl.VERTEX_SHADER, vsSource);
+            const fs = compileShader(gl.FRAGMENT_SHADER, fsSource);
+            program = gl.createProgram();
+            gl.attachShader(program, vs);
+            gl.attachShader(program, fs);
+            gl.linkProgram(program);
+
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error(gl.getProgramInfoLog(program));
+            }
+
+            const positions = new Float32Array([-1, -1,  1, -1, -1,  1, -1,  1,  1, -1,  1,  1]);
+            positionBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+
+            vao = gl.createVertexArray();
+            gl.bindVertexArray(vao);
+            const posLoc = gl.getAttribLocation(program, 'position');
+            gl.enableVertexAttribArray(posLoc);
+            gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+            createDefaultTexture();
+        }
+
+        function compileShader(type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error(gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        function createDefaultTexture() {
+            if(textureID) gl.deleteTexture(textureID);
+            textureID = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, textureID);
+            const data = new Uint8Array([120, 120, 120, 255]);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        }
+
+        function updateTextureSource(element) {
+            if(!textureID) textureID = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, textureID);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, element);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        }
+
+        function resizeCanvas() {
+            const parts = state.aspect.split(':');
+            const aspectW = parseFloat(parts[0]);
+            const aspectH = parseFloat(parts[1]);
+            const ratio = aspectW / aspectH;
+
+            const container = document.getElementById('viewport-container');
+            const maxW = container.clientWidth - 40;
+            const maxH = container.clientHeight - 40;
+
+            let targetW = maxW;
+            let targetH = maxW / ratio;
+
+            if (targetH > maxH) {
+                targetH = maxH;
+                targetW = maxH * ratio;
+            }
+
+            wrapper.style.width = `${targetW}px`;
+            wrapper.style.height = `${targetH}px`;
+            wrapper.style.transform = `scale(${state.uiScale / 100})`;
+
+            canvas.width = targetW;
+            canvas.height = targetH;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+
+        function drawFrame() {
+            gl.clearColor(0, 0, 0, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            gl.useProgram(program);
+
+            gl.uniform1f(gl.getUniformLocation(program, "u_gamma"), state.gamma);
+            gl.uniform1f(gl.getUniformLocation(program, "u_contrast"), state.contrast);
+            gl.uniform1i(gl.getUniformLocation(program, "u_invert"), state.invert ? 1 : 0);
+
+            gl.uniform1i(gl.getUniformLocation(program, "u_pattern_type"), state.patternType);
+            gl.uniform1f(gl.getUniformLocation(program, "u_density"), state.gridDensity);
+            gl.uniform1f(gl.getUniformLocation(program, "u_screen_angle"), state.patternAngle);
+            gl.uniform1f(gl.getUniformLocation(program, "u_sharpness"), state.dotSharpness);
+
+            gl.uniform1f(gl.getUniformLocation(program, "u_wave_amp"), state.waveAmp);
+            gl.uniform1f(gl.getUniformLocation(program, "u_wave_freq"), state.waveFreq);
+
+            // Pass Paper Background Vector
+            const paperRgb = hexToRgb(state.paperColor);
+            gl.uniform3f(gl.getUniformLocation(program, "u_paper_color_raw"), paperRgb.r, paperRgb.g, paperRgb.b);
+
+            gl.uniform1i(gl.getUniformLocation(program, "u_num_colors"), state.colors.length);
+            gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), canvas.width, canvas.height);
+            gl.uniform1f(gl.getUniformLocation(program, "u_time"), state.time);
+
+            const colorsFlat = [];
+            const weightsFlat = [];
+            state.colors.forEach(c => {
+                const rgb = hexToRgb(c.hex);
+                colorsFlat.push(rgb.r, rgb.g, rgb.b);
+                weightsFlat.push(c.weight);
+            });
+
+            gl.uniform3fv(gl.getUniformLocation(program, "u_colors"), new Float32Array(colorsFlat));
+            gl.uniform1fv(gl.getUniformLocation(program, "u_weights"), new Float32Array(weightsFlat));
+
+            gl.bindVertexArray(vao);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+        }
+
+        function render(now) {
+            now *= 0.001; 
+            const delta = now - state.lastFrameTime;
+            state.lastFrameTime = now;
+
+            if (state.playing) {
+                let speedMod = state.speed * 0.1;
+                state.time += delta * speedMod;
+            }
+
+            if ((isVideo || isWebcam) && sourceElement) {
+                if (sourceElement.readyState >= sourceElement.HAVE_CURRENT_DATA) {
+                    updateTextureSource(sourceElement);
+                }
+            }
+
+            drawFrame();
+            requestAnimationFrame(render);
+        }
+
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16) / 255,
+                g: parseInt(result[2], 16) / 255,
+                b: parseInt(result[3], 16) / 255
+            } : { r: 0, g: 0, b: 0 };
+        }
+
+        function generateColorListUI() {
+            const container = document.getElementById('color-list');
+            container.innerHTML = '';
+            state.colors.forEach((col, idx) => {
+                const row = document.createElement('div');
+                row.className = 'color-item';
+                row.draggable = true;
+                row.dataset.index = idx;
+
+                row.innerHTML = `
+                    <span style="width:12px; color:#555;">☰</span>
+                    <input type="color" value="${col.hex}">
+                    <input type="range" min="0.1" max="5.0" step="0.1" value="${col.weight}">
+                `;
+
+                row.querySelector('input[type="color"]').addEventListener('input', (e) => {
+                    state.colors[idx].hex = e.target.value;
+                });
+                row.querySelector('input[type="range"]').addEventListener('input', (e) => {
+                    state.colors[idx].weight = parseFloat(e.target.value);
+                });
+
+                row.addEventListener('dragstart', (e) => {
+                    e.dataTransfer.setData('text/plain', idx);
+                    row.style.opacity = '0.4';
+                });
+                row.addEventListener('dragend', () => row.style.opacity = '1');
+                row.addEventListener('dragover', (e) => e.preventDefault());
+                row.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    const fromIdx = parseInt(e.dataTransfer.getData('text/plain'));
+                    const toIdx = idx;
+                    if(fromIdx !== toIdx) {
+                        const targetItem = state.colors.splice(fromIdx, 1)[0];
+                        state.colors.splice(toIdx, 0, targetItem);
+                        generateColorListUI();
+                    }
+                });
+
+                container.appendChild(row);
+            });
+        }
+
+        function processFile(file) {
+            if(!file) return;
+            const url = URL.createObjectURL(file);
+            
+            if(webcamStream) {
+                webcamStream.getTracks().forEach(track => track.stop());
+                isWebcam = false;
+                document.getElementById('webcam-btn').classList.remove('active');
+            }
+
+            if(file.type.startsWith('image/')) {
+                isVideo = false;
+                const img = new Image();
+                img.onload = function() {
+                    sourceElement = img;
+                    updateTextureSource(img);
+                    dropZone.innerText = `IMAGE: ${file.name.toUpperCase()}`;
+                };
+                img.src = url;
+            } else if(file.type.startsWith('video/')) {
+                isVideo = true;
+                const video = document.createElement('video');
+                video.src = url;
+                video.autoplay = true;
+                video.loop = true;
+                video.muted = true;
+                video.play();
+                video.onloadeddata = function() {
+                    sourceElement = video;
+                    dropZone.innerText = `VIDEO: ${file.name.toUpperCase()}`;
+                };
+            }
+        }
+
+        function initInterface() {
+            dropZone.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', (e) => processFile(e.target.files[0]));
+            
+            window.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+            window.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+            window.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('dragover');
+                if(e.dataTransfer.files.length > 0) processFile(e.dataTransfer.files[0]);
+            });
+
+            document.getElementById('webcam-btn').addEventListener('click', async function() {
+                if(isWebcam) {
+                    if(webcamStream) webcamStream.getTracks().forEach(track => track.stop());
+                    isWebcam = false;
+                    this.classList.remove('active');
+                    createDefaultTexture();
+                    dropZone.innerText = "DRAG & DROP IMAGE/VIDEO OR CLICK";
+                } else {
+                    try {
+                        webcamStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                        const video = document.createElement('video');
+                        video.srcObject = webcamStream;
+                        video.autoplay = true;
+                        video.play();
+                        video.onloadeddata = () => {
+                            sourceElement = video;
+                            isWebcam = true;
+                            isVideo = false;
+                            this.classList.add('active');
+                            dropZone.innerText = "WEBCAM ACTIVE PIPELINE";
+                        };
+                    } catch(err) {
+                        alert("Webcam connection failed access requests.");
+                    }
+                }
+            });
+
+            // Bind State Controllers
+            const bindings = [
+                { id: 'p-gamma', var: 'gamma', label: 'v-gamma' },
+                { id: 'p-shadows', var: 'contrast', label: 'v-shadows' },
+                { id: 'p-density', var: 'gridDensity', label: 'v-density' },
+                { id: 'p-screen-angle', var: 'patternAngle', label: 'v-screen-angle', suffix: '°' },
+                { id: 'p-sharpness', var: 'dotSharpness', label: 'v-sharpness' },
+                { id: 'p-speed', var: 'speed', label: 'v-speed' },
+                { id: 'p-wave-amp', var: 'waveAmp', label: 'v-wave-amp' },
+                { id: 'p-wave-freq', var: 'waveFreq', label: 'v-wave-freq' }
+            ];
+
+            bindings.forEach(b => {
+                const el = document.getElementById(b.id);
+                const lbl = document.getElementById(b.label);
+                el.addEventListener('input', (e) => {
+                    state[b.var] = parseFloat(e.target.value);
+                    lbl.innerText = state[b.var] + (b.suffix || '');
+                });
+            });
+
+            document.getElementById('p-pattern-type').addEventListener('change', (e) => {
+                state.patternType = parseInt(e.target.value);
+            });
+
+            document.getElementById('p-paper-color').addEventListener('input', (e) => {
+                state.paperColor = e.target.value;
+            });
+
+            document.getElementById('p-invert').addEventListener('click', function() {
+                state.invert = !state.invert;
+                this.classList.toggle('active', state.invert);
+                this.innerText = `Invert Source Map: ${state.invert ? 'ON' : 'OFF'}`;
+            });
+
+            document.getElementById('anim-toggle').addEventListener('click', function() {
+                state.playing = !state.playing;
+                this.classList.toggle('active', state.playing);
+                this.innerText = `Engine: ${state.playing ? 'PLAYING' : 'PAUSED'}`;
+            });
+
+            document.getElementById('p-aspect').addEventListener('change', (e) => {
+                state.aspect = e.target.value;
+                resizeCanvas();
+            });
+
+            document.getElementById('p-scale').addEventListener('input', (e) => {
+                state.uiScale = parseInt(e.target.value);
+                document.getElementById('v-scale').innerText = `${state.uiScale}%`;
+                resizeCanvas();
+            });
+
+            document.getElementById('exp-low').addEventListener('click', () => captureFrame(1000));
+            document.getElementById('exp-high').addEventListener('click', () => captureFrame(3000));
+            document.getElementById('exp-video').addEventListener('click', toggleVideoRecording);
+
+            generateColorListUI();
+        }
+
+        function captureFrame(size) {
+            const parts = state.aspect.split(':');
+            const aspectW = parseFloat(parts[0]);
+            const aspectH = parseFloat(parts[1]);
+            const ratio = aspectW / aspectH;
+
+            let targetW = size;
+            let targetH = size / ratio;
+            if(ratio < 1.0) {
+                targetH = size;
+                targetW = size * ratio;
+            }
+
+            canvas.width = targetW;
+            canvas.height = targetH;
+            gl.viewport(0, 0, targetW, targetH);
+
+            drawFrame();
+
+            const dataUrl = canvas.toDataURL('image/png');
+            const link = document.createElement('a');
+            link.download = `halftone_print_${size}px.png`;
+            link.href = dataUrl;
+            link.click();
+
+            resizeCanvas();
+        }
+
+        function toggleVideoRecording() {
+            const btn = document.getElementById('exp-video');
+            const statusIndicator = document.getElementById('recording-status');
+            
+            if (isRecording) {
+                mediaRecorder.stop();
+                isRecording = false;
+                btn.innerText = "Record WebM Stream (Start/Stop)";
+                btn.style.background = "#0a0a0a";
+                statusIndicator.style.display = "none";
+            } else {
+                recordedChunks = [];
+                const stream = canvas.captureStream(30); 
+                
+                let options = { mimeType: 'video/webm;codecs=vp9' };
+                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                    options = { mimeType: 'video/webm;codecs=vp8' };
+                }
+
+                mediaRecorder = new MediaRecorder(stream, options);
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) recordedChunks.push(e.data);
+                };
+
+                mediaRecorder.onstop = () => {
+                    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.download = `halftone_capture.webm`;
+                    link.href = url;
+                    link.click();
+                };
+
+                mediaRecorder.start();
+                isRecording = true;
+                btn.innerText = "STOP RECORDING BUFFER";
+                btn.style.background = "#550000";
+                statusIndicator.style.display = "block";
+            }
+        }
+
+        window.onload = () => {
+            initContext();
+            initInterface();
+            resizeCanvas();
+            requestAnimationFrame(render);
+        };
+    </script>
+</body>
+</html>
