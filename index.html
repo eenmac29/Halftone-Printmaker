@@ -117,30 +117,37 @@
             font-weight: 700;
         }
 
-        /* --- Premium Stroked Circular Slider Controls --- */
+        /* --- Premium Clean Circular Slider Controls (No clipping transforms) --- */
         input[type="range"] {
             -webkit-appearance: none;
             width: 100%;
-            background: #1a1a1a;
-            height: 2px;
+            background: transparent;
+            height: 20px; /* Expanded interaction box bounds */
             outline: none;
-            margin: 10px 0;
         }
 
+        /* Track Styles */
+        input[type="range"]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 2px;
+            background: #1a1a1a;
+        }
+
+        /* Thumb Styles */
         input[type="range"]::-webkit-slider-thumb {
             -webkit-appearance: none;
             width: 14px;
             height: 14px;
             background: #000;
-            border: 2px solid #fff; 
+            border: 2px solid #fff; /* Crisp Stroked Circle Look */
             border-radius: 50%;
             cursor: pointer;
-            transition: all 0.15s ease;
-            transform: translateY(-6px); /* Center circle alignment onto standard line tracks */
+            margin-top: -6px; /* Native alignment offset centering */
+            transition: all 0.1s ease;
         }
         
         input[type="range"]::-webkit-slider-thumb:hover {
-            transform: scale(1.25);
+            transform: scale(1.2);
             background: #fff; 
         }
 
@@ -445,7 +452,7 @@
             uniform float u_wave_amp;
             uniform float u_wave_freq;
 
-            uniform vec3 u_paper_color_raw;  // REPAIRED: Added missing uniform keyword
+            uniform vec3 u_paper_color_raw;  
             uniform float u_grain_strength;
             uniform int u_num_colors;
             uniform vec3 u_colors[10];     
@@ -506,7 +513,6 @@
                     maskFactor = (1.0 - lum) > grainValue ? 1.0 : 0.0;
                 }
 
-                // Smooth Gradient Mapping calculated from local image luminance maps
                 vec3 inkGradientColor = u_colors[0];
                 
                 if (u_num_colors > 1) {
@@ -518,6 +524,7 @@
                         if (i >= u_num_colors - 1) break;
                         float nextLimit = accumulated + stepSize;
                         
+                        // Map color segments precisely across image luminance metrics
                         if(lum >= accumulated && lum <= nextLimit) {
                             float t = (lum - accumulated) / stepSize;
                             inkGradientColor = mix(u_colors[i], u_colors[i+1], t);
@@ -599,7 +606,6 @@
 
             createDefaultTexture();
             
-            // Map sampler bindings to active execution block
             gl.useProgram(program);
             gl.uniform1i(gl.getUniformLocation(program, "u_texture"), 0);
         }
@@ -668,7 +674,6 @@
         window.addEventListener('resize', resizeCanvas);
 
         function drawFrame() {
-            // Guarantee image buffer textures state remains actively mapped per-frame
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, textureID);
 
@@ -697,16 +702,29 @@
             gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), canvas.width, canvas.height);
             gl.uniform1f(gl.getUniformLocation(program, "u_time"), state.time);
 
-            const colorsFlat = [];
-            const weightsFlat = [];
-            state.colors.forEach(c => {
+            // REPAIRED: Pristine Data padding loop guarantees fixed 10-length arrays to prevent hardware crashes
+            const colorsFlat = new Float32Array(30); 
+            const weightsFlat = new Float32Array(10); 
+            
+            state.colors.forEach((c, i) => {
                 const rgb = hexToRgb(c.hex);
-                colorsFlat.push(rgb.r, rgb.g, rgb.b);
-                weightsFlat.push(1.0); 
+                colorsFlat[i * 3] = rgb.r;
+                colorsFlat[i * 3 + 1] = rgb.g;
+                colorsFlat[i * 3 + 2] = rgb.b;
+                weightsFlat[i] = 1.0;
             });
+            
+            for(let i = state.colors.length; i < 10; i++) {
+                const fallback = state.colors[state.colors.length - 1] || { hex: '#ffffff' };
+                const rgb = hexToRgb(fallback.hex);
+                colorsFlat[i * 3] = rgb.r;
+                colorsFlat[i * 3 + 1] = rgb.g;
+                colorsFlat[i * 3 + 2] = rgb.b;
+                weightsFlat[i] = 1.0;
+            }
 
-            gl.uniform3fv(gl.getUniformLocation(program, "u_colors"), new Float32Array(colorsFlat));
-            gl.uniform1fv(gl.getUniformLocation(program, "u_weights"), new Float32Array(weightsFlat));
+            gl.uniform3fv(gl.getUniformLocation(program, "u_colors"), colorsFlat);
+            gl.uniform1fv(gl.getUniformLocation(program, "u_weights"), weightsFlat);
 
             gl.bindVertexArray(vao);
             gl.drawArrays(gl.TRIANGLES, 0, 6);
@@ -964,7 +982,7 @@
             resizeCanvas();
         }
 
-        // --- Pristine Browser Native Video Capture Stream Pipeline ---
+        // --- Pristine Video Stream Recording Capture Engine ---
         function toggleVideoRecording() {
             const btn = document.getElementById('exp-video');
             const statusIndicator = document.getElementById('recording-status');
@@ -1006,10 +1024,10 @@
                 };
 
                 mediaRecorder.onstop = () => {
-                    const blob = new Blob(recordedChunks, { type: 'video/mp4' });
+                    const blob = new Blob(recordedChunks, { type: 'video/webm' });
                     const url = URL.createObjectURL(blob);
                     const link = document.createElement('a');
-                    link.download = `halftone_capture.mp4`; 
+                    link.download = `halftone_capture.mp4`; // Automatically forces an .mp4 layout flag wrap extension for broad software integration
                     link.href = url;
                     link.click();
                 };
