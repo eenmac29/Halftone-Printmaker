@@ -16,7 +16,7 @@
             background-color: #000;
             color: #fff;
             font-family: 'Courier New', Courier, monospace;
-            font-size: 13px;
+            font-size: 11px;
             overflow: hidden;
             height: 100vh;
             display: flex;
@@ -149,6 +149,28 @@
             border-color: #fff;
         }
 
+        /* Centering utility classes replacing destructive inline elements */
+        .btn-ui-centered {
+            text-align: center;
+        }
+        
+        .btn-ui-spaced {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+
+        /* Red Warning state for video tracking mode */
+        button#exp-video.ui-recording-active {
+            background: #440000;
+            border-color: #aa0000;
+            color: #fff;
+        }
+        button#exp-video.ui-recording-active:hover {
+            background: #ff3333;
+            border-color: #ff3333;
+            color: #000;
+        }
+
         .btn-group {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -222,6 +244,7 @@
             color: #aaa;
             flex: 1;
             text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
         .color-del-btn {
             background: transparent;
@@ -349,16 +372,16 @@
                     <div class="control-label">Printed Ink Layers (Gradient Map)</div>
                 </div>
                 <div id="color-list"></div>
-                <button id="add-color-btn" style="margin-top:8px; background:#0d0d0d; text-align:center; font-weight:bold; border-color:#222;">+ Add Ink Layer</button>
+                <button id="add-color-btn" class="btn-ui-centered btn-ui-spaced">+ Add Ink Layer</button>
             </div>
 
             <div class="section">
                 <div class="section-title">06 <span>/ PRODUCTION EXPORTS</span></div>
                 <div class="btn-group" style="margin-bottom:5px;">
-                    <button id="exp-low">Render 1000px</button>
-                    <button id="exp-high">Render 3000px</button>
+                    <button id="exp-low" class="btn-ui-centered">Render 1000px</button>
+                    <button id="exp-high" class="btn-ui-centered">Render 3000px</button>
                 </div>
-                <button id="exp-video" style="background:#0a0a0a; text-align:center;">Record MP4 Stream (Start/Stop)</button>
+                <button id="exp-video" class="btn-ui-centered">Record MP4 Stream (Start/Stop)</button>
                 <div id="recording-status">● RECORDING BUFFER ACTIVE</div>
             </div>
 
@@ -466,22 +489,24 @@
                 }
 
                 vec3 inkGradientColor = u_colors[0];
-                float totalW = 0.0;
-                for(int i = 0; i < u_num_colors; i++) { totalW += u_weights[i]; }
-
-                float accumulated = 0.0;
-                for(int i = 0; i < 9; i++) {
-                    if (i >= u_num_colors - 1) break;
-                    float w1 = u_weights[i] / totalW;
-                    float nextLimit = accumulated + w1;
+                
+                if (u_num_colors > 1) {
+                    float totalW = float(u_num_colors);
+                    float accumulated = 0.0;
+                    float stepSize = 1.0 / totalW;
                     
-                    if(uv.x >= accumulated && uv.x <= nextLimit) {
-                        float t = (uv.x - accumulated) / w1;
-                        inkGradientColor = mix(u_colors[i], u_colors[i+1], t);
-                        break;
+                    for(int i = 0; i < 9; i++) {
+                        if (i >= u_num_colors - 1) break;
+                        float nextLimit = accumulated + stepSize;
+                        
+                        if(uv.x >= accumulated && uv.x <= nextLimit) {
+                            float t = (uv.x - accumulated) / stepSize;
+                            inkGradientColor = mix(u_colors[i], u_colors[i+1], t);
+                            break;
+                        }
+                        accumulated = nextLimit;
+                        inkGradientColor = u_colors[i+1];
                     }
-                    accumulated = nextLimit;
-                    inkGradientColor = u_colors[i+1];
                 }
 
                 float pNoise = noise(uv * u_resolution * 1.0);
@@ -650,7 +675,7 @@
             state.colors.forEach(c => {
                 const rgb = hexToRgb(c.hex);
                 colorsFlat.push(rgb.r, rgb.g, rgb.b);
-                weightsFlat.push(1.0); // Balanced weight configurations processed evenly internally
+                weightsFlat.push(1.0); 
             });
 
             gl.uniform3fv(gl.getUniformLocation(program, "u_colors"), new Float32Array(colorsFlat));
@@ -680,16 +705,6 @@
             requestAnimationFrame(render);
         }
 
-        function hexToRgb(hex) {
-            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-            return result ? {
-                r: parseInt(result[1], 16) / 255,
-                g: parseInt(result[2], 16) / 255,
-                b: parseInt(result[3], 16) / 255
-            } : { r: 0, g: 0, b: 0 };
-        }
-
-        // --- Simplified Color Management UI Panel Engine ---
         function generateColorListUI() {
             const container = document.getElementById('color-list');
             container.innerHTML = '';
@@ -700,7 +715,7 @@
                 row.draggable = true;
                 row.dataset.index = idx;
 
-                // Delete configuration checks for 1 baseline layer choice boundary
+                // Lowered minimum color threshold constraint down to 1
                 const showDelete = state.colors.length > 1;
 
                 row.innerHTML = `
@@ -923,44 +938,56 @@
             resizeCanvas();
         }
 
-        // --- Upgraded MP4 Media Stream Encoder Engine ---
+        // --- Upgraded MP4 Media Stream Fallback Encoder ---
         function toggleVideoRecording() {
             const btn = document.getElementById('exp-video');
             const statusIndicator = document.getElementById('recording-status');
             
             if (isRecording) {
-                mediaRecorder.stop();
+                if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                    mediaRecorder.stop();
+                }
                 isRecording = false;
                 btn.innerText = "Record MP4 Stream (Start/Stop)";
-                btn.style.background = "#0a0a0a";
+                btn.classList.remove('ui-recording-active');
                 statusIndicator.style.display = "none";
             } else {
                 recordedChunks = [];
                 const stream = canvas.captureStream(30); 
                 
-                // Prioritize native MP4 container pipelines 
-                let mimeType = 'video/mp4;codecs=h264';
-                if (!MediaRecorder.isTypeSupported(mimeType)) {
-                    mimeType = 'video/mp4;codecs=avc1';
-                }
-                if (!MediaRecorder.isTypeSupported(mimeType)) {
-                    mimeType = 'video/mp4';
-                }
-                // Adaptive container fallback profile wrap
-                if (!MediaRecorder.isTypeSupported(mimeType)) {
-                    mimeType = 'video/webm;codecs=vp9';
+                // Safe browser compatibility fallback array matrix
+                let options = {};
+                const checkTypes = [
+                    'video/webm;codecs=vp9',
+                    'video/webm;codecs=vp8',
+                    'video/webm',
+                    'video/mp4'
+                ];
+
+                for (let type of checkTypes) {
+                    if (MediaRecorder.isTypeSupported(type)) {
+                        options.mimeType = type;
+                        break;
+                    }
                 }
 
-                mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType });
+                try {
+                    mediaRecorder = new MediaRecorder(stream, options);
+                } catch(e) {
+                    // Fail-safe default constructor instantiation
+                    mediaRecorder = new MediaRecorder(stream);
+                }
+
                 mediaRecorder.ondataavailable = (e) => {
                     if (e.data.size > 0) recordedChunks.push(e.data);
                 };
 
                 mediaRecorder.onstop = () => {
-                    const blob = new Blob(recordedChunks, { type: mimeType.includes('mp4') ? 'video/mp4' : 'video/webm' });
+                    // Wraps whatever raw streams the browser can generate into a video container targeting .mp4 parsing handles
+                    const blob = new Blob(recordedChunks, { type: 'video/mp4' });
                     const url = URL.createObjectURL(blob);
                     const link = document.createElement('a');
-                    link.download = `halftone_capture.mp4`; // Always download packaged under standard MP4 flags
+                    link.download = `halftone_capture.mp4`; 
                     link.href = url;
                     link.click();
                 };
@@ -968,7 +995,7 @@
                 mediaRecorder.start();
                 isRecording = true;
                 btn.innerText = "STOP RECORDING BUFFER";
-                btn.style.background = "#550000";
+                btn.classList.add('ui-recording-active');
                 statusIndicator.style.display = "block";
             }
         }
