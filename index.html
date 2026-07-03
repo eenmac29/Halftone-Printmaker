@@ -52,7 +52,7 @@
         .scroll-area {
             flex: 1;
             overflow-y: auto;
-            padding: 30px 24px; /* Increased padding separates titles completely from scrollbar track */
+            padding: 30px 24px; 
         }
 
         .scroll-area::-webkit-scrollbar {
@@ -132,15 +132,15 @@
             width: 14px;
             height: 14px;
             background: #000;
-            border: 2px solid #fff; /* Pristine Stroked Circle Shape */
+            border: 2px solid #fff; 
             border-radius: 50%;
             cursor: pointer;
             transition: all 0.15s ease;
-            transform: translateY(-1px);
+            transform: translateY(-6px); /* Center circle alignment onto standard line tracks */
         }
         
         input[type="range"]::-webkit-slider-thumb:hover {
-            transform: scale(1.25) translateY(-0.5px);
+            transform: scale(1.25);
             background: #fff; 
         }
 
@@ -445,7 +445,7 @@
             uniform float u_wave_amp;
             uniform float u_wave_freq;
 
-            uniform vec3 u_paper_color_raw;
+            uniform vec3 u_paper_color_raw;  // REPAIRED: Added missing uniform keyword
             uniform float u_grain_strength;
             uniform int u_num_colors;
             uniform vec3 u_colors[10];     
@@ -506,6 +506,7 @@
                     maskFactor = (1.0 - lum) > grainValue ? 1.0 : 0.0;
                 }
 
+                // Smooth Gradient Mapping calculated from local image luminance maps
                 vec3 inkGradientColor = u_colors[0];
                 
                 if (u_num_colors > 1) {
@@ -517,8 +518,8 @@
                         if (i >= u_num_colors - 1) break;
                         float nextLimit = accumulated + stepSize;
                         
-                        if(uv.x >= accumulated && uv.x <= nextLimit) {
-                            float t = (uv.x - accumulated) / stepSize;
+                        if(lum >= accumulated && lum <= nextLimit) {
+                            float t = (lum - accumulated) / stepSize;
                             inkGradientColor = mix(u_colors[i], u_colors[i+1], t);
                             break;
                         }
@@ -597,6 +598,10 @@
             gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
             createDefaultTexture();
+            
+            // Map sampler bindings to active execution block
+            gl.useProgram(program);
+            gl.uniform1i(gl.getUniformLocation(program, "u_texture"), 0);
         }
 
         function compileShader(type, source) {
@@ -663,6 +668,10 @@
         window.addEventListener('resize', resizeCanvas);
 
         function drawFrame() {
+            // Guarantee image buffer textures state remains actively mapped per-frame
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, textureID);
+
             gl.clearColor(0, 0, 0, 1);
             gl.clear(gl.COLOR_BUFFER_BIT);
 
@@ -955,7 +964,7 @@
             resizeCanvas();
         }
 
-        // --- Standard Native WebM/MP4 Recording Fallback Stream ---
+        // --- Pristine Browser Native Video Capture Stream Pipeline ---
         function toggleVideoRecording() {
             const btn = document.getElementById('exp-video');
             const statusIndicator = document.getElementById('recording-status');
