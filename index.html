@@ -117,38 +117,28 @@
             font-weight: 700;
         }
 
-        /* --- Premium Clean Circular Slider Controls (No clipping transforms) --- */
+        /* --- Restored Original Minimalist Square Range Sliders --- */
         input[type="range"] {
             -webkit-appearance: none;
             width: 100%;
-            background: transparent;
-            height: 20px; /* Expanded interaction box bounds */
-            outline: none;
-        }
-
-        /* Track Styles */
-        input[type="range"]::-webkit-slider-runnable-track {
-            width: 100%;
-            height: 2px;
             background: #1a1a1a;
+            height: 2px;
+            outline: none;
+            margin: 12px 0;
         }
 
-        /* Thumb Styles */
         input[type="range"]::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 14px;
-            height: 14px;
-            background: #000;
-            border: 2px solid #fff; /* Crisp Stroked Circle Look */
-            border-radius: 50%;
+            width: 10px;
+            height: 10px;
+            background: #fff;
             cursor: pointer;
-            margin-top: -6px; /* Native alignment offset centering */
-            transition: all 0.1s ease;
+            border-radius: 0;
+            transition: transform 0.1s ease;
         }
         
         input[type="range"]::-webkit-slider-thumb:hover {
-            transform: scale(1.2);
-            background: #fff; 
+            transform: scale(1.3);
         }
 
         select, button {
@@ -513,26 +503,24 @@
                     maskFactor = (1.0 - lum) > grainValue ? 1.0 : 0.0;
                 }
 
+                // REPAIRED: Bulletproof index tree selection bypasses hardware loop restrictions completely
                 vec3 inkGradientColor = u_colors[0];
-                
                 if (u_num_colors > 1) {
-                    float totalW = float(u_num_colors);
-                    float accumulated = 0.0;
-                    float stepSize = 1.0 / totalW;
+                    float n = float(u_num_colors);
+                    float pct = lum * (n - 1.0);
+                    int idx = int(floor(pct));
+                    idx = clamp(idx, 0, 8);
+                    float t = fract(pct);
                     
-                    for(int i = 0; i < 9; i++) {
-                        if (i >= u_num_colors - 1) break;
-                        float nextLimit = accumulated + stepSize;
-                        
-                        // Map color segments precisely across image luminance metrics
-                        if(lum >= accumulated && lum <= nextLimit) {
-                            float t = (lum - accumulated) / stepSize;
-                            inkGradientColor = mix(u_colors[i], u_colors[i+1], t);
-                            break;
-                        }
-                        accumulated = nextLimit;
-                        inkGradientColor = u_colors[i+1];
-                    }
+                    if (idx == 0) inkGradientColor = mix(u_colors[0], u_colors[1], t);
+                    else if (idx == 1) inkGradientColor = mix(u_colors[1], u_colors[2], t);
+                    else if (idx == 2) inkGradientColor = mix(u_colors[2], u_colors[3], t);
+                    else if (idx == 3) inkGradientColor = mix(u_colors[3], u_colors[4], t);
+                    else if (idx == 4) inkGradientColor = mix(u_colors[4], u_colors[5], t);
+                    else if (idx == 5) inkGradientColor = mix(u_colors[5], u_colors[6], t);
+                    else if (idx == 6) inkGradientColor = mix(u_colors[6], u_colors[7], t);
+                    else if (idx == 7) inkGradientColor = mix(u_colors[7], u_colors[8], t);
+                    else if (idx == 8) inkGradientColor = mix(u_colors[8], u_colors[9], t);
                 }
 
                 float pNoise = noise(uv * u_resolution * 1.0);
@@ -702,7 +690,7 @@
             gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), canvas.width, canvas.height);
             gl.uniform1f(gl.getUniformLocation(program, "u_time"), state.time);
 
-            // REPAIRED: Pristine Data padding loop guarantees fixed 10-length arrays to prevent hardware crashes
+            // Padding hardware loop handles array data structure arrays completely cleanly
             const colorsFlat = new Float32Array(30); 
             const weightsFlat = new Float32Array(10); 
             
@@ -982,7 +970,6 @@
             resizeCanvas();
         }
 
-        // --- Pristine Video Stream Recording Capture Engine ---
         function toggleVideoRecording() {
             const btn = document.getElementById('exp-video');
             const statusIndicator = document.getElementById('recording-status');
@@ -1027,7 +1014,7 @@
                     const blob = new Blob(recordedChunks, { type: 'video/webm' });
                     const url = URL.createObjectURL(blob);
                     const link = document.createElement('a');
-                    link.download = `halftone_capture.mp4`; // Automatically forces an .mp4 layout flag wrap extension for broad software integration
+                    link.download = `halftone_capture.mp4`; 
                     link.href = url;
                     link.click();
                 };
