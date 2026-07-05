@@ -28,7 +28,7 @@
             display: flex;
         }
 
-        /* --- UI Layout & Spacing Upgrades --- */
+        /* --- UI Layout & Spacing --- */
         #sidebar {
             width: 360px;
             height: 100%;
@@ -117,7 +117,7 @@
             font-weight: 700;
         }
 
-        /* --- Restored Original Minimalist Square Range Sliders --- */
+        /* --- Restored Minimalist Square Sliders --- */
         input[type="range"] {
             -webkit-appearance: none;
             width: 100%;
@@ -235,7 +235,7 @@
             object-fit: contain;
         }
 
-        /* --- Color Layers Sorting --- */
+        /* --- Color Layers --- */
         .color-item {
             display: flex;
             align-items: center;
@@ -397,7 +397,7 @@
                     <button id="exp-low" class="btn-ui-centered">Render 1000px</button>
                     <button id="exp-high" class="btn-ui-centered">Render 3000px</button>
                 </div>
-                <button id="exp-video" class="btn-ui-centered">Record MP4 Stream (Start/Stop)</button>
+                <button id="exp-video" class="btn-ui-centered">Record Video Stream</button>
                 <div id="recording-status">● RECORDING BUFFER ACTIVE</div>
             </div>
 
@@ -411,128 +411,120 @@
     </div>
 
     <script>
-        // --- Formatter-Proof Shaders ---
-        const vsSource = `#version 300 es
-            in vec2 position;
-            out vec2 vUv;
-            void main() {
-                vUv = position * 0.5 + 0.5;
-                vUv.y = 1.0 - vUv.y; 
-                gl_Position = vec4(position, 0.0, 1.0);
-            }
-        `;
+        // --- Formatter-Proof Bulletproof Shaders ---
+        const vsSource = [
+            '#version 300 es',
+            'in vec2 position;',
+            'out vec2 vUv;',
+            'void main() {',
+            '    vUv = position * 0.5 + 0.5;',
+            '    vUv.y = 1.0 - vUv.y;',
+            '    gl_Position = vec4(position, 0.0, 1.0);',
+            '}'
+        ].join('\n');
 
-        const fsSource = `#version 300 es
-            precision highp float;
-            in vec2 vUv;
-            out vec4 fragColor;
-
-            uniform sampler2D u_texture;
-            uniform vec2 u_resolution;
-            uniform float u_time;
+        const fsSource = [
+            '#version 300 es',
+            'precision highp float;',
+            'in vec2 vUv;',
+            'out vec4 fragColor;',
+            'uniform sampler2D u_texture;',
+            'uniform vec2 u_resolution;',
+            'uniform vec2 u_media_resolution;', // NEW: Track the source media aspect ratio
+            'uniform float u_time;',
+            'uniform float u_gamma;',
+            'uniform float u_contrast;',
+            'uniform bool u_invert;',
+            'uniform int u_pattern_type;',
+            'uniform float u_density;',
+            'uniform float u_screen_angle;',
+            'uniform float u_sharpness;',
+            'uniform float u_wave_amp;',
+            'uniform float u_wave_freq;',
+            'uniform vec3 u_paper_color_raw;',
+            'uniform float u_grain_strength;',
+            'uniform int u_num_colors;',
+            'uniform vec3 u_colors[10];',
+            'float noise(vec2 st) {',
+            '    return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);',
+            '}',
+            'void main() {',
+            '    vec2 uv = vUv;',
+            // --- NEW: Calculate Object-Fit Cover Coordinates ---
+            '    vec2 mediaUv = uv;',
+            '    float canvasAspect = u_resolution.x / max(u_resolution.y, 1.0);',
+            '    float mediaAspect = u_media_resolution.x / max(u_media_resolution.y, 1.0);',
+            '    if (canvasAspect > mediaAspect) {',
+            '        float scale = mediaAspect / canvasAspect;',
+            '        mediaUv.y = (uv.y - 0.5) * scale + 0.5;',
+            '    } else {',
+            '        float scale = canvasAspect / mediaAspect;',
+            '        mediaUv.x = (uv.x - 0.5) * scale + 0.5;',
+            '    }',
+            // --- Sample from the cropped coords ---
+            '    vec4 tex = texture(u_texture, mediaUv);',
+            '    vec3 srcColor = tex.rgb;',
+            '    srcColor = pow(max(srcColor, vec3(0.0)), vec3(u_gamma));',
+            '    float lum = dot(srcColor, vec3(0.299, 0.587, 0.114));',
+            '    lum = clamp(pow(lum, u_contrast), 0.0, 1.0);',
+            '    if(u_invert) { lum = 1.0 - lum; }',
             
-            uniform float u_gamma;
-            uniform float u_contrast;
-            uniform bool u_invert;
-
-            uniform int u_pattern_type;
-            uniform float u_density;
-            uniform float u_screen_angle;
-            uniform float u_sharpness;
-
-            uniform float u_wave_amp;
-            uniform float u_wave_freq;
-
-            uniform vec3 u_paper_color_raw;
-            uniform float u_grain_strength;
-            uniform int u_num_colors;
-            uniform vec3 u_colors[10];     
-
-            float noise(vec2 st) {
-                return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
-            }
-
-            void main() {
-                vec2 uv = vUv;
-                vec4 tex = texture(u_texture, uv);
-                vec3 srcColor = tex.rgb;
-
-                srcColor = pow(max(srcColor, vec3(0.0)), vec3(u_gamma));
-                float lum = dot(srcColor, vec3(0.299, 0.587, 0.114));
-                lum = clamp(pow(lum, u_contrast), 0.0, 1.0);
-
-                if(u_invert) {
-                    lum = 1.0 - lum;
-                }
-
-                float rad = radians(u_screen_angle);
-                mat2 rot = mat2(cos(rad), -sin(rad), sin(rad), cos(rad));
-                vec2 rotUv = rot * (uv - 0.5);
-
-                if (u_wave_amp > 0.0) {
-                    rotUv.y += sin(rotUv.x * u_wave_freq + u_time) * u_wave_amp;
-                    rotUv.x += cos(rotUv.y * u_wave_freq + u_time) * (u_wave_amp * 0.5);
-                }
-
-                vec2 st = rotUv * u_density;
-                vec2 fpos = fract(st) - 0.5;
-
-                float maskFactor = 0.0;
-                float edgeSize = u_sharpness;
-
-                if (u_pattern_type == 0) { 
-                    float dist = length(fpos);
-                    float targetRadius = (1.0 - lum) * 0.707;
-                    maskFactor = smoothstep(targetRadius + edgeSize, targetRadius - edgeSize, dist);
-                } 
-                else if (u_pattern_type == 1) { 
-                    float dist = abs(fpos.y);
-                    float targetThickness = (1.0 - lum) * 0.5;
-                    maskFactor = smoothstep(targetThickness + edgeSize, targetThickness - edgeSize, dist);
-                } 
-                else if (u_pattern_type == 2) { 
-                    float distY = abs(fpos.y);
-                    float distX = abs(fpos.x);
-                    float targetThickness = (1.0 - lum) * 0.5;
-                    float lineY = smoothstep(targetThickness + edgeSize, targetThickness - edgeSize, distY);
-                    float lineX = smoothstep(targetThickness + edgeSize, targetThickness - edgeSize, distX);
-                    maskFactor = max(lineY, lineX);
-                } 
-                else if (u_pattern_type == 3) { 
-                    float grainValue = noise(uv * u_resolution + vec2(sin(u_time), cos(u_time)));
-                    maskFactor = (1.0 - lum) > grainValue ? 1.0 : 0.0;
-                }
-
-                vec3 inkGradientColor = u_colors[0];
-                
-                if (u_num_colors > 1) {
-                    float n = float(u_num_colors);
-                    float pct = uv.x * (n - 1.0); 
-                    int idx = int(floor(pct));
-                    idx = clamp(idx, 0, 8);
-                    float t = fract(pct);
-                    
-                    if (idx == 0) inkGradientColor = mix(u_colors[0], u_colors[1], t);
-                    else if (idx == 1) inkGradientColor = mix(u_colors[1], u_colors[2], t);
-                    else if (idx == 2) inkGradientColor = mix(u_colors[2], u_colors[3], t);
-                    else if (idx == 3) inkGradientColor = mix(u_colors[3], u_colors[4], t);
-                    else if (idx == 4) inkGradientColor = mix(u_colors[4], u_colors[5], t);
-                    else if (idx == 5) inkGradientColor = mix(u_colors[5], u_colors[6], t);
-                    else if (idx == 6) inkGradientColor = mix(u_colors[6], u_colors[7], t);
-                    else if (idx == 7) inkGradientColor = mix(u_colors[7], u_colors[8], t);
-                    else if (idx == 8) inkGradientColor = mix(u_colors[8], u_colors[9], t);
-                }
-
-                float pNoise = noise(uv * u_resolution * 1.0);
-                float pNoiseFine = noise(uv * u_resolution * 3.5);
-                float paperTooth = (pNoise * 0.65 + pNoiseFine * 0.35);
-                
-                vec3 texturedPaper = u_paper_color_raw - (vec3(paperTooth) * u_grain_strength * 0.12);
-
-                vec3 outputFrame = mix(texturedPaper, inkGradientColor, maskFactor);
-                fragColor = vec4(outputFrame, 1.0);
-            }
-        `;
+            // --- Grid coordinates remain mapped to canvas (uv) so dots stay proportional ---
+            '    float rad = radians(u_screen_angle);',
+            '    mat2 rot = mat2(cos(rad), -sin(rad), sin(rad), cos(rad));',
+            '    vec2 rotUv = rot * (uv - 0.5);',
+            '    if (u_wave_amp > 0.0) {',
+            '        rotUv.y += sin(rotUv.x * u_wave_freq + u_time) * u_wave_amp;',
+            '        rotUv.x += cos(rotUv.y * u_wave_freq + u_time) * (u_wave_amp * 0.5);',
+            '    }',
+            '    vec2 st = rotUv * u_density;',
+            '    vec2 fpos = fract(st) - 0.5;',
+            '    float maskFactor = 0.0;',
+            '    float edgeSize = u_sharpness;',
+            '    if (u_pattern_type == 0) { ',
+            '        float dist = length(fpos);',
+            '        float targetRadius = (1.0 - lum) * 0.707;',
+            '        maskFactor = smoothstep(targetRadius + edgeSize, targetRadius - edgeSize, dist);',
+            '    } else if (u_pattern_type == 1) { ',
+            '        float dist = abs(fpos.y);',
+            '        float targetThickness = (1.0 - lum) * 0.5;',
+            '        maskFactor = smoothstep(targetThickness + edgeSize, targetThickness - edgeSize, dist);',
+            '    } else if (u_pattern_type == 2) { ',
+            '        float distY = abs(fpos.y);',
+            '        float distX = abs(fpos.x);',
+            '        float targetThickness = (1.0 - lum) * 0.5;',
+            '        float lineY = smoothstep(targetThickness + edgeSize, targetThickness - edgeSize, distY);',
+            '        float lineX = smoothstep(targetThickness + edgeSize, targetThickness - edgeSize, distX);',
+            '        maskFactor = max(lineY, lineX);',
+            '    } else if (u_pattern_type == 3) { ',
+            '        float grainValue = noise(uv * u_resolution + vec2(sin(u_time), cos(u_time)));',
+            '        maskFactor = (1.0 - lum) > grainValue ? 1.0 : 0.0;',
+            '    }',
+            '    vec3 inkGradientColor = u_colors[0];',
+            '    if (u_num_colors > 1) {',
+            '        float totalW = float(u_num_colors);',
+            '        float accumulated = 0.0;',
+            '        float stepSize = 1.0 / totalW;',
+            '        for(int i = 0; i < 9; i++) {',
+            '            if (i >= u_num_colors - 1) break;',
+            '            float nextLimit = accumulated + stepSize;',
+            '            if(lum >= accumulated && lum <= nextLimit) {',
+            '                float t = (lum - accumulated) / stepSize;',
+            '                inkGradientColor = mix(u_colors[i], u_colors[i+1], t);',
+            '                break;',
+            '            }',
+            '            accumulated = nextLimit;',
+            '            inkGradientColor = u_colors[i+1];',
+            '        }',
+            '    }',
+            '    float pNoise = noise(uv * u_resolution * 1.0);',
+            '    float pNoiseFine = noise(uv * u_resolution * 3.5);',
+            '    float paperTooth = (pNoise * 0.65 + pNoiseFine * 0.35);',
+            '    vec3 texturedPaper = u_paper_color_raw - (vec3(paperTooth) * u_grain_strength * 0.12);',
+            '    vec3 outputFrame = mix(texturedPaper, inkGradientColor, maskFactor);',
+            '    fragColor = vec4(outputFrame, 1.0);',
+            '}'
+        ].join('\n');
 
         // --- App Architecture ---
         let gl, program;
@@ -568,7 +560,7 @@
 
         function initContext() {
             gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true });
-            if (!gl) { alert('WebGL 2 required'); return; }
+            if (!gl) { alert('WebGL 2 required on this browser.'); return; }
 
             const vs = compileShader(gl.VERTEX_SHADER, vsSource);
             const fs = compileShader(gl.FRAGMENT_SHADER, fsSource);
@@ -580,8 +572,7 @@
             gl.linkProgram(program);
 
             if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-                console.error(gl.getProgramInfoLog(program));
-                return;
+                console.error("Link Error: " + gl.getProgramInfoLog(program));
             }
 
             const positions = new Float32Array([-1, -1,  1, -1, -1,  1, -1,  1,  1, -1,  1,  1]);
@@ -603,10 +594,11 @@
 
         function compileShader(type, source) {
             const shader = gl.createShader(type);
-            gl.shaderSource(shader, source.trim()); // Trim removes accidental leading spaces
+            gl.shaderSource(shader, source);
             gl.compileShader(shader);
             if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-                console.error("Shader compilation error: ", gl.getShaderInfoLog(shader));
+                alert("Shader Compile Error. See console for details.");
+                console.error(gl.getShaderInfoLog(shader));
                 gl.deleteShader(shader);
                 return null;
             }
@@ -659,14 +651,13 @@
 
             canvas.width = targetW;
             canvas.height = targetH;
-            
-            if (gl) gl.viewport(0, 0, canvas.width, canvas.height);
+            gl.viewport(0, 0, canvas.width, canvas.height);
         }
 
         window.addEventListener('resize', resizeCanvas);
 
         function drawFrame() {
-            if (!program) return;
+            if (!program) return; 
 
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, textureID);
@@ -695,6 +686,15 @@
             gl.uniform1i(gl.getUniformLocation(program, "u_num_colors"), state.colors.length);
             gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), canvas.width, canvas.height);
             gl.uniform1f(gl.getUniformLocation(program, "u_time"), state.time);
+            
+            // --- NEW: Expose Source Media dimensions to Shader for Object-Fit Cover ---
+            let mediaW = 1.0;
+            let mediaH = 1.0;
+            if (sourceElement) {
+                mediaW = sourceElement.videoWidth || sourceElement.naturalWidth || 1.0;
+                mediaH = sourceElement.videoHeight || sourceElement.naturalHeight || 1.0;
+            }
+            gl.uniform2f(gl.getUniformLocation(program, "u_media_resolution"), mediaW, mediaH);
 
             const colorsFlat = new Float32Array(30); 
             state.colors.forEach((c, i) => {
@@ -710,7 +710,6 @@
                 colorsFlat[i * 3 + 1] = rgb.g;
                 colorsFlat[i * 3 + 2] = rgb.b;
             }
-
             gl.uniform3fv(gl.getUniformLocation(program, "u_colors"), colorsFlat);
 
             gl.bindVertexArray(vao);
@@ -737,15 +736,6 @@
             requestAnimationFrame(render);
         }
 
-        function hexToRgb(hex) {
-            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-            return result ? {
-                r: parseInt(result[1], 16) / 255,
-                g: parseInt(result[2], 16) / 255,
-                b: parseInt(result[3], 16) / 255
-            } : { r: 0, g: 0, b: 0 };
-        }
-
         function generateColorListUI() {
             const container = document.getElementById('color-list');
             container.innerHTML = '';
@@ -758,9 +748,6 @@
 
                 const showDelete = state.colors.length > 1;
 
-                // BUG FIX: The fatal crash occurred because I deleted the range slider HTML 
-                // in the previous version, but left the Javascript event listener that 
-                // was searching for it. That crashed the entire load sequence.
                 row.innerHTML = `
                     <span style="width:12px; color:#555;">☰</span>
                     <input type="color" value="${col.hex}">
@@ -950,7 +937,7 @@
             document.getElementById('exp-high').addEventListener('click', () => captureFrame(3000));
             document.getElementById('exp-video').addEventListener('click', toggleVideoRecording);
 
-            generateColorListUI(); // This is where it was crashing before!
+            generateColorListUI();
         }
 
         function captureFrame(size) {
@@ -990,7 +977,7 @@
                     mediaRecorder.stop();
                 }
                 isRecording = false;
-                btn.innerText = "Record MP4 Stream (Start/Stop)";
+                btn.innerText = "Record Video Stream";
                 btn.classList.remove('ui-recording-active');
                 statusIndicator.style.display = "none";
             } else {
@@ -998,6 +985,7 @@
                 const stream = canvas.captureStream(30); 
                 
                 let options = {};
+                let finalExtension = 'webm';
                 const checkTypes = [
                     'video/webm;codecs=vp9',
                     'video/webm;codecs=vp8',
@@ -1022,10 +1010,10 @@
                 };
 
                 mediaRecorder.onstop = () => {
-                    const blob = new Blob(recordedChunks, { type: 'video/mp4' });
+                    const blob = new Blob(recordedChunks, { type: options.mimeType || 'video/webm' });
                     const url = URL.createObjectURL(blob);
                     const link = document.createElement('a');
-                    link.download = `halftone_capture.mp4`; 
+                    link.download = `halftone_capture.${finalExtension}`; 
                     link.href = url;
                     link.click();
                 };
